@@ -397,6 +397,11 @@ class CarState(CarStateBase):
       aeb_warning = cp_cruise.vl[aeb_src]["CF_VSM_Warn"] != 0
       scc_warning = cp_cruise.vl["SCC12"]["TakeOverReq"] == 1  # sometimes only SCC system shows an FCW
       aeb_braking = cp_cruise.vl[aeb_src]["CF_VSM_DecCmdAct"] != 0 or cp_cruise.vl[aeb_src][aeb_sig] != 0
+      if self.CP.carFingerprint == CAR.HYUNDAI_CASPER_EV and aeb_src == "FCA11":
+        fca_fault = cp_cruise.vl["FCA11"]["FCA_Failinfo"] != 0 or cp_cruise.vl["FCA11"]["FCA_Status"] == 3
+        if fca_fault:
+          aeb_warning = False
+          aeb_braking = False
       ret.stockFcw = (aeb_warning or scc_warning) and not aeb_braking
       ret.stockAeb = aeb_warning and aeb_braking
 
@@ -590,23 +595,22 @@ class CarState(CarStateBase):
 
     speed_limit_cam = False
     corner = False
-    if self.ccnc_0x162 is not None:
-      ret.leftLongDist = self.lf_distance = self.ccnc_0x162["LF_DETECT_DISTANCE"]
-      ret.rightLongDist = self.rf_distance = self.ccnc_0x162["RF_DETECT_DISTANCE"]
-      self.lr_distance = self.ccnc_0x162["LR_DETECT_DISTANCE"]
-      self.rr_distance = self.ccnc_0x162["RR_DETECT_DISTANCE"]
-      ret.leftLatDist = self.ccnc_0x162["LF_DETECT_LATERAL"]
-      ret.rightLatDist = self.ccnc_0x162["RF_DETECT_LATERAL"]
+    corner_infos = [info for info in (self.adrv_0x1ea, self.ccnc_0x162) if info is not None]
+    if corner_infos:
+      def corner_max(signal):
+        return max(info[signal] for info in corner_infos)
+
+      ret.leftLongDist = self.lf_distance = corner_max("LF_DETECT_DISTANCE")
+      ret.rightLongDist = self.rf_distance = corner_max("RF_DETECT_DISTANCE")
+      self.lr_distance = corner_max("LR_DETECT_DISTANCE")
+      self.rr_distance = corner_max("RR_DETECT_DISTANCE")
+      ret.leftLatDist = corner_max("LF_DETECT_LATERAL")
+      ret.rightLatDist = corner_max("RF_DETECT_LATERAL")
+      ret.leftRearLongDist = self.lr_distance
+      ret.rightRearLongDist = self.rr_distance
+      ret.leftRearLatDist = corner_max("LR_DETECT_LATERAL")
+      ret.rightRearLatDist = corner_max("RR_DETECT_LATERAL")
       corner = True
-    if self.adrv_0x1ea is not None:
-      if not corner:
-        ret.leftLongDist = self.adrv_0x1ea["LF_DETECT_DISTANCE"]
-        ret.rightLongDist = self.adrv_0x1ea["RF_DETECT_DISTANCE"]
-        self.lr_distance = self.adrv_0x1ea["LR_DETECT_DISTANCE"]
-        self.rr_distance = self.adrv_0x1ea["RR_DETECT_DISTANCE"]
-        ret.leftLatDist = self.adrv_0x1ea["LF_DETECT_LATERAL"]
-        ret.rightLatDist = self.adrv_0x1ea["RF_DETECT_LATERAL"]
-        corner = True
     if corner:
       left_block = True if 0 < ret.leftLongDist < 7.0 or 0 < self.lr_distance < 7.0 else False
       right_block = True if 0 < ret.rightLongDist < 7.0 or 0 < self.rr_distance < 7.0 else False
@@ -639,7 +643,7 @@ class CarState(CarStateBase):
       right_lane_prob = lane_info["RIGHT_LANE_PROB"]
       left_lane_type = lane_info["LEFT_LANE_TYPE"] # 0: dashed, 1: solid, 2: undecided, 3: road edge, 4: DLM Inner Solid, 5: DLM InnerDashed, 6:DLM Inner Undecided, 7: Botts Dots, 8: Barrier
       right_lane_type = lane_info["RIGHT_LANE_TYPE"]
-      left_lane_color = lane_info["LEFT_LANE_COLOR"]
+      left_lane_color = lane_info["LEFT_LANE_COLOR"]  # 0: none, 1: white, 2: yellow, 3: blue
       right_lane_color = lane_info["RIGHT_LANE_COLOR"]
       left_lane_info = left_lane_color * 10 + left_lane_type
       right_lane_info = right_lane_color * 10 + right_lane_type
